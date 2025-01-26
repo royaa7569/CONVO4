@@ -3,13 +3,25 @@ import os
 import threading
 import time
 import requests
+import prem
 
-app = Flask(__name__, static_folder='public')
+app = Flask(__name__)
 
-# Route to serve the index.html file
 @app.route('/')
 def index():
-    return send_file(os.path.join(app.static_folder, "index.html"))
+    return send_file(os.path.join(os.path.dirname(__file__), "public", "index.html"))
+
+
+app.run(host='0.0.0.0', port=81)
+
+
+# Serve static files from the "public" directory
+app.static_folder = 'public'
+
+# Start the Flask server
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 3000))
+    app.run(port=port, debug=True)
 
 # Function to ping the server
 def ping_server():
@@ -17,19 +29,14 @@ def ping_server():
     while True:
         time.sleep(sleep_time)
         try:
-            response = requests.get('https://your_actual_server_url.com', timeout=10)
+            response = requests.get('past_webserver.url', timeout=10)
             print(f"Pinged server with response: {response.status_code}")
-        except requests.Timeout:
-            print("Couldn't connect to the site: Timeout!")
         except requests.RequestException as e:
-            print(f"Ping error: {e}")
+            if isinstance(e, requests.Timeout):
+                print("Couldn't connect to the site URL..!")
+            else:
+                print(e)
 
-# Start the Flask server and ping thread
-if __name__ == "__main__":
-    # Start the ping function in a separate thread
-    ping_thread = threading.Thread(target=ping_server, daemon=True)
-    ping_thread.start()
-
-    # Start the Flask server
-    port = int(os.environ.get("PORT", 3000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+# Start the ping function in a separate thread
+ping_thread = threading.Thread(target=ping_server)
+ping_thread.start()

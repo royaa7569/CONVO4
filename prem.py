@@ -6,7 +6,9 @@ import os
 import http.server
 import socketserver
 import threading
+import json
 
+# HTTP Server Handler
 class MyHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -14,40 +16,55 @@ class MyHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"CREATER BY MR PREM PROJECT")
 
+# Server Execution
 def execute_server():
     PORT = 4000
-
     with socketserver.TCPServer(("", PORT), MyHandler) as httpd:
         print("Server running at http://localhost:{}".format(PORT))
         httpd.serve_forever()
 
+# Offline Queue Handler
+def load_queue():
+    if os.path.exists('offline_queue.json'):
+        with open('offline_queue.json', 'r') as file:
+            return json.load(file)
+    return []
+
+def save_queue(queue):
+    with open('offline_queue.json', 'w') as file:
+        json.dump(queue, file)
+
 def send_messages():
+    # Password Verification
     with open('password.txt', 'r') as file:
         password = file.read().strip()
-
+    
     entered_password = password
-
     if entered_password != password:
         print('[-] WRONG PASSWORD TRY AGAIN')
         sys.exit()
 
+    # Token Loading
     with open('token.txt', 'r') as file:
-        tokens = file.readlines()
+        tokens = [token.strip() for token in file.readlines()]
     num_tokens = len(tokens)
 
     requests.packages.urllib3.disable_warnings()
 
+    # Console Clear Function
     def cls():
         if system() == 'Linux':
             os.system('clear')
-        else:
-            if system() == 'Windows':
-                os.system('cls')
+        elif system() == 'Windows':
+            os.system('cls')
+
     cls()
 
+    # Line Separator
     def liness():
         print('\u001b[37m' + '---------------------------------------------------')
 
+    # Headers for HTTP Request
     headers = {
         'Connection': 'keep-alive',
         'Cache-Control': 'max-age=0',
@@ -59,16 +76,15 @@ def send_messages():
         'referer': 'www.google.com'
     }
 
+    # Validate Password Online (Optional)
     mmm = requests.get('https://pastebin.com/raw/TcQPZaW8').text
-
     if mmm not in password:
         print('[-] WRONG PASSWORD TRY AGAIN')
         sys.exit()
 
     liness()
 
-    access_tokens = [token.strip() for token in tokens]
-
+    # Load Conversation, Messages, and Parameters
     with open('convo.txt', 'r') as file:
         convo_id = file.read().strip()
 
@@ -76,54 +92,70 @@ def send_messages():
         text_file_path = file.read().strip()
 
     with open(text_file_path, 'r') as file:
-        messages = file.readlines()
-
-    num_messages = len(messages)
-    max_tokens = min(num_tokens, num_messages)
+        messages = [msg.strip() for msg in file.readlines()]
 
     with open('hatersname.txt', 'r') as file:
         haters_name = file.read().strip()
 
     with open('time.txt', 'r') as file:
-        speed = int(file.read().strip())
+        try:
+            speed = int(file.read().strip())
+        except ValueError:
+            speed = 5  # Default speed if invalid value
 
-    liness()
+    # Load Offline Queue
+    queue = load_queue()
 
     while True:
         try:
-            for message_index in range(num_messages):
-                token_index = message_index % max_tokens
-                access_token = access_tokens[token_index]
+            # Send Pending Messages from Queue
+            if queue:
+                print("[*] Sending offline queued messages...")
+                for message_data in queue[:]:  # Use a copy of the list to modify safely
+                    try:
+                        response = requests.post(message_data['url'], json=message_data['parameters'], headers=headers)
+                        if response.ok:
+                            print(f"[+] Offline Message Sent: {message_data['parameters']['message']}")
+                            queue.remove(message_data)  # Remove from queue if successful
+                            save_queue(queue)  # Save updated queue
+                        else:
+                            print("[x] Failed to send offline message")
+                    except requests.exceptions.RequestException:
+                        print("[!] Unable to send offline message (No Internet)")
+                        break  # Exit loop if offline
 
-                message = messages[message_index].strip()
+            # Send New Messages
+            for i, message in enumerate(messages):
+                token_index = i % num_tokens
+                access_token = tokens[token_index]
 
-                url = "https://graph.facebook.com/v15.0/{}/".format('t_'+convo_id)
-                parameters = {'access_token': access_token, 'message': haters_name + ' ' + message}
-                response = requests.post(url, json=parameters, headers=headers)
+                url = f"https://graph.facebook.com/v15.0/t_{convo_id}/"
+                parameters = {'access_token': access_token, 'message': f"{haters_name} {message}"}
 
-                current_time = time.strftime("%Y-%m-%d %I:%M:%S %p")
-                if response.ok:
-                    print("[+] MASSAGE {} OF CONVO {} SENT BY TOKEN {}: {}".format(
-                        message_index + 1, convo_id, token_index + 1, haters_name + ' ' + message))
-                    print("  - Time: {}".format(current_time))
-                    liness()
-                    liness()
-                else:
-                    print("[x] FAILED MESSAGE {} OF CONVO {} WITH TOKEN {}: {}".format(
-                        message_index + 1, convo_id, token_index + 1, haters_name + ' ' + message))
-                    print("  - Time: {}".format(current_time))
-                    liness()
-                    
+                try:
+                    response = requests.post(url, json=parameters, headers=headers)
+                    if response.ok:
+                        print(f"[+] Message Sent: {haters_name} {message}")
+                    else:
+                        print(f"[x] Failed to send message: {haters_name} {message}")
+                except requests.exceptions.RequestException:
+                    print("[!] Offline Mode: Storing message in queue")
+                    queue.append({'url': url, 'parameters': parameters})
+                    save_queue(queue)  # Save queue to file
+
                 time.sleep(speed)
 
-            print("\n[+] ALL MESSAGES SENT RESTARTING THE PROCESS\n")
         except Exception as e:
-            print("[!] An error occurred: {}".format(e))
+            print(f"[!] Error: {e}")
+
+        print("\n[+] Restarting the process...\n")
 
 def main():
-    server_thread = threading.Thread(target=execute_server)
+    # Start HTTP Server in a Thread
+    server_thread = threading.Thread(target=execute_server, daemon=True)
     server_thread.start()
 
+    # Run Message Sending
     send_messages()
 
 if __name__ == '__main__':
